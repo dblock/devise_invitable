@@ -24,8 +24,7 @@ module Devise
       attr_accessor :skip_invitation
 
       included do
-        include ::DeviseInvitable::Inviter        
-        belongs_to :invited_by, :polymorphic => true
+        include ::DeviseInvitable::Inviter
         
         include ActiveSupport::Callbacks
         define_callbacks :invitation_accepted
@@ -57,7 +56,6 @@ module Devise
         generate_invitation_token if self.invitation_token.nil?
         self.invitation_sent_at = Time.now.utc
         if save(:validate => false)
-          self.invited_by.decrement_invitation_limit! if !was_invited and self.invited_by.present?
           deliver_invitation unless @skip_invitation
         end
       end
@@ -129,7 +127,6 @@ module Devise
         def _invite(attributes={}, invited_by=nil, &block)
           invitable = find_or_initialize_with_error_by(invite_key, attributes.delete(invite_key))
           invitable.assign_attributes(attributes, :as => inviter_role(invited_by))
-          invitable.invited_by = invited_by
 
           invitable.skip_password = true
           invitable.valid? if self.validate_on_invite
