@@ -22,7 +22,6 @@ module Devise
       extend ActiveSupport::Concern
 
       attr_accessor :skip_invitation
-      attr_accessor :invited_by
 
       included do
         include ::DeviseInvitable::Inviter
