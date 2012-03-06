@@ -22,6 +22,7 @@ module Devise
       extend ActiveSupport::Concern
 
       attr_accessor :skip_invitation
+      attr_accessor :invited_by
 
       included do
         include ::DeviseInvitable::Inviter
@@ -127,6 +128,7 @@ module Devise
         def _invite(attributes={}, invited_by=nil, &block)
           invitable = find_or_initialize_with_error_by(invite_key, attributes.delete(invite_key))
           invitable.assign_attributes(attributes, :as => inviter_role(invited_by))
+          invitable.invited_by = invited_by
 
           invitable.skip_password = true
           invitable.valid? if self.validate_on_invite
