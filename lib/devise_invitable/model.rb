@@ -1,3 +1,5 @@
+require 'active_support/deprecation'
+
 module Devise
   module Models
     # Invitable is responsible for sending invitation emails.
@@ -13,7 +15,7 @@ module Devise
     #
     # Examples:
     #
-    #   User.find(1).invited?                               # => true/false
+    #   User.find(1).invited_to_sign_up?                    # => true/false
     #   User.invite!(:email => 'someone@example.com')       # => send invitation
     #   User.accept_invitation!(:invitation_token => '...') # => accept invitation with a token
     #   User.find(1).accept_invitation!                     # => accept invitation
@@ -22,39 +24,81 @@ module Devise
       extend ActiveSupport::Concern
 
       attr_accessor :skip_invitation
+      attr_accessor :completing_invite
 
       included do
         include ::DeviseInvitable::Inviter
-        
         include ActiveSupport::Callbacks
         define_callbacks :invitation_accepted
-        
+
         attr_writer :skip_password
+
+        scope :invitation_not_accepted, where(:invitation_accepted_at => nil)
+        if defined?(Mongoid) && self < Mongoid::Document
+          scope :invitation_accepted, where(:invitation_accepted_at.ne => nil)
+        else
+          scope :invitation_accepted, where(arel_table[:invitation_accepted_at].not_eq(nil))
+        end
+      end
+
+      def self.required_fields(klass)
+        fields = [:invitation_token, :invitation_sent_at, :invitation_accepted_at,
+         :invitation_limit, :invited_by_id, :invited_by_type]
+        if Devise.invited_by_class_name
+          fields -= :invited_by_type
+        end
+        fields
+      end
+
+      def invitation_fields
+        fields = [:invitation_sent_at, :invited_by_id, :invited_by_type]
+        if Devise.invited_by_class_name
+          fields -= :invited_by_type
+        end
+        fields
       end
 
       # Accept an invitation by clearing invitation token and and setting invitation_accepted_at
       # Confirms it if model is confirmable
       def accept_invitation!
-        if self.invited? && self.valid?
+        self.completing_invite = true
+        if self.invited_to_sign_up? && self.valid?
           run_callbacks :invitation_accepted do
             self.invitation_token = nil
             self.invitation_accepted_at = Time.now.utc if respond_to? :"invitation_accepted_at="
+            self.completing_invite = false
             self.save(:validate => false)
           end
         end
       end
 
+      # Verifies whether a user has accepted an invite, was never invited, or is in the process of accepting an invitation, or not
+      def accepting_or_not_invited?
+        !!completing_invite || !invited_to_sign_up?
+      end
+
       # Verifies whether a user has been invited or not
-      def invited?
+      def invited_to_sign_up?
         persisted? && invitation_token.present?
       end
 
+      def invited?
+        ActiveSupport::Deprecation.warn "invited? is deprecated and will be removed from DeviseInvitable 1.1.0 (use invited_to_sign_up? instead)"
+        invited_to_sign_up?
+      end
+
       # Reset invitation token and send invitation again
-      def invite!
-        was_invited = invited?
+      def invite!(invited_by = nil)
+        was_invited = invited_to_sign_up?
         self.skip_confirmation! if self.new_record? && self.respond_to?(:skip_confirmation!)
         generate_invitation_token if self.invitation_token.nil?
         self.invitation_sent_at = Time.now.utc
+        self.invited_by = invited_by if invited_by
+        
+        # Call these before_validate methods since we aren't validating on save
+        self.downcase_keys if self.new_record? && self.respond_to?(:downcase_keys)
+        self.strip_whitespace if self.new_record? && self.respond_to?(:strip_whitespace)
+
         if save(:validate => false)
           deliver_invitation unless @skip_invitation
         end
@@ -64,17 +108,24 @@ module Devise
       # invited, we need to calculate if the invitation time has not expired
       # for this user, in other words, if the invitation is still valid.
       def valid_invitation?
-        invited? && invitation_period_valid?
+        invited_to_sign_up? && invitation_period_valid?
       end
 
       # Only verify password when is not invited
       def valid_password?(password)
-        super unless invited?
+        super unless invited_to_sign_up?
       end
-      
+
       def reset_password!(new_password, new_password_confirmation)
         super
         accept_invitation!
+      end
+
+      def invite_key_valid?
+        return true unless self.class.invite_key.is_a? Hash # FIXME: remove this line when deprecation is removed
+        self.class.invite_key.all? do |key, regexp|
+          regexp.nil? || self.send(key).try(:match, regexp)
+        end
       end
 
       protected
@@ -118,6 +169,16 @@ module Devise
         end
 
       module ClassMethods
+        # Return fields to invite
+        def invite_key_fields
+          if invite_key.is_a? Hash
+            invite_key.keys
+          else
+            ActiveSupport::Deprecation.warn("invite_key should be a hash like {#{invite_key.inspect} => /.../}")
+            Array(invite_key)
+          end
+        end
+
         # Attempt to find a user by it's email. If a record is not found, create a new
         # user and send invitation to it. If user is found, returns the user with an
         # email already exists error.
@@ -125,15 +186,23 @@ module Devise
         # resend_invitation is set to false
         # Attributes must contain the user email, other attributes will be set in the record
         def _invite(attributes={}, invited_by=nil, &block)
-          invitable = find_or_initialize_with_error_by(invite_key, attributes.delete(invite_key))
+          invite_key_array = invite_key_fields
+          attributes_hash = {}
+          invite_key_array.each do |k,v|
+            attributes_hash[k] = attributes.delete(k)
+          end
+
+          invitable = find_or_initialize_with_errors(invite_key_array, attributes_hash)
           invitable.assign_attributes(attributes, :as => inviter_role(invited_by))
 
           invitable.skip_password = true
           invitable.valid? if self.validate_on_invite
           if invitable.new_record?
-            invitable.errors.clear if !self.validate_on_invite and invitable.email.try(:match, Devise.email_regexp)
-          else
-            invitable.errors.add(invite_key, :taken) unless invitable.invited? && self.resend_invitation
+            invitable.errors.clear if !self.validate_on_invite and invitable.invite_key_valid?
+          elsif !invitable.invited_to_sign_up? || !self.resend_invitation
+            invite_key_array.each do |key|
+              invitable.errors.add(key, :taken)
+            end
           end
 
           if invitable.errors.empty?
@@ -142,7 +211,7 @@ module Devise
           end
           [invitable, mail]
         end
-        
+
         # Override this method if the invitable is using Mass Assignment Security
         # and the inviter has a non-default role.
         def inviter_role(inviter)
@@ -178,16 +247,16 @@ module Devise
         def invitation_token
           generate_token(:invitation_token)
         end
-        
+
         # Callback convenience methods
         def before_invitation_accepted(*args, &blk)
           set_callback(:invitation_accepted, :before, *args, &blk)
         end
-        
+
         def after_invitation_accepted(*args, &blk)
           set_callback(:invitation_accepted, :after, *args, &blk)
         end
-        
+
 
         Devise::Models.config(self, :invite_for)
         Devise::Models.config(self, :validate_on_invite)

@@ -48,7 +48,7 @@ class InvitableTest < ActiveSupport::TestCase
 
   test 'should test invitation sent at with invite_for configuration value' do
     user = User.invite!(:email => "valid@email.com")
-    
+
     User.stubs(:invite_for).returns(nil)
     user.invitation_sent_at = Time.now.utc
     assert user.valid_invitation?
@@ -70,7 +70,7 @@ class InvitableTest < ActiveSupport::TestCase
     assert user.valid_invitation?
 
     User.stubs(:invite_for).returns(1.day)
-    user.invitation_sent_at = 1.day.ago
+    user.invitation_sent_at = 2.days.ago
     assert !user.valid_invitation?
   end
 
@@ -85,11 +85,25 @@ class InvitableTest < ActiveSupport::TestCase
     end
   end
 
+  test 'should invite with mutiple columns for invite key' do
+    User.stubs(:invite_key).returns(:email => Devise.email_regexp, :username => /\A.+\z/)
+    user = User.invite!(:email => "valid@email.com", :username => "name")
+    assert user.persisted?
+    assert user.errors.empty?
+  end
+
+  test 'should not invite with some missing columns when invite key is an array' do
+    User.stubs(:invite_key).returns(:email => Devise.email_regexp, :username => /\A.+\z/)
+    user = User.invite!(:email => "valid@email.com")
+    assert user.new_record?
+    assert user.errors.present?
+  end
+
   test 'should return mail object' do
     mail = User.invite_mail!(:email => 'valid@email.com')
     assert mail.class.name == 'Mail::Message'
   end
-  
+
   test 'should disallow login when invited' do
     invited_user = User.invite!(:email => "valid@email.com")
     assert !invited_user.valid_password?('1234')
@@ -362,7 +376,22 @@ class InvitableTest < ActiveSupport::TestCase
       user.invite!
     end
   end
-  
+
+  test 'user.invite! should not set the invited_by attribute if not passed' do
+    user = new_user
+    user.invite!
+    assert_equal nil, user.invited_by
+  end
+
+  test 'user.invite! should set the invited_by attribute if passed' do
+    user = new_user
+    inviting_user = User.new(:email => "valid@email.com")
+    inviting_user.save(:validate => false)
+    user.invite!(inviting_user)
+    assert_equal inviting_user, user.invited_by
+    assert_equal inviting_user.class.to_s, user.invited_by_type
+  end
+
   test 'user.accept_invitation! should trigger callbacks' do
     user = User.invite!(:email => "valid@email.com")
     assert !user.callback_works
@@ -378,4 +407,57 @@ class InvitableTest < ActiveSupport::TestCase
     assert !user.callback_works
   end
 
+  test "user.invite! should downcase the class's case_insensitive_keys" do
+    # Devise default is :email
+    user = User.invite!(:email => "UPPERCASE@email.com")
+    assert user.email == "uppercase@email.com"
+  end
+
+  test "user.invite! should strip whitespace from the class's strip_whitespace_keys" do
+    # Devise default is email
+    user = User.invite!(:email => " valid@email.com ")
+    assert user.email == "valid@email.com"
+  end
+
+  test 'should pass validation before accept if field is required in post-invited instance' do
+    user = User.invite!(:email => "valid@email.com")
+    user.testing_accepting_or_not_invited = true
+    assert_equal true, user.valid?
+  end
+
+  test 'should fail validation after accept if field is required in post-invited instance' do
+    user = User.invite!(:email => "valid@email.com")
+    user.testing_accepting_or_not_invited = true
+    user.accept_invitation!
+    assert_equal false, user.valid?
+  end
+
+  test 'should pass validation after accept if field is required in post-invited instance' do
+    user = User.invite!(:email => "valid@email.com")
+    user.username = 'test'
+    user.testing_accepting_or_not_invited = true
+    user.accept_invitation!
+    assert_equal true, user.valid?
+  end
+
+  test 'should return instance with errors if invitation_token is nil' do
+    registered_user = User.create(:email => 'admin@test.com', :password => '123456', :password_confirmation => '123456')
+    user = User.accept_invitation!
+    assert !user.errors.empty?
+  end
+
+  test "should count accepted and not accepted invitations" do
+    assert_equal 0, User.invitation_not_accepted.count
+    assert_equal 0, User.invitation_accepted.count
+
+    User.invite!(:email => "invalid@email.com")
+    user = User.invite!(:email => "valid@email.com")
+
+    assert_equal 2, User.invitation_not_accepted.count
+    assert_equal 0, User.invitation_accepted.count
+
+    user.accept_invitation!
+    assert_equal 1, User.invitation_not_accepted.count
+    assert_equal 1, User.invitation_accepted.count
+  end
 end

@@ -1,10 +1,11 @@
 = DeviseInvitable
+{<img src="http://travis-ci.org/scambra/devise_invitable.png"/>}[http://travis-ci.org/scambra/devise_invitable]
 
 It adds support to devise[http://github.com/plataformatec/devise] for send invitations by email (it requires to be authenticated) and accept the invitation setting the password.
 
 DeviseInvitable currently only support Rails 3, if you want to use it with Rails 2.3 you must install version {0.2.3}[http://rubygems.org/gems/devise_invitable/versions/0.2.3]
 
-== Installation for Rails ~> 3.0 and Devise ~> 1.2
+== Installation
 
 Install DeviseInvitable gem, it will also install dependencies (such as devise and warden):
 
@@ -12,8 +13,8 @@ Install DeviseInvitable gem, it will also install dependencies (such as devise a
 
 Add DeviseInvitable to your Gemfile (and Devise if you weren't using them):
 
-  gem 'devise',           '~> 2.0.0'
-  gem 'devise_invitable', '~> 0.7.0'
+  gem 'devise',           '>= 2.0.0'
+  gem 'devise_invitable', '~> 1.0.0'
 
 === Automatic installation
 
@@ -50,7 +51,7 @@ Add t.invitable to your Devise model migration:
       t.string   :invited_by_type
     ...
   end
-  add_index :users, :invitation_token
+  add_index :users, :invitation_token, :unique => true
 
 or for a model that already exists, define a migration to add DeviseInvitable to your model:
 
@@ -65,9 +66,9 @@ or for a model that already exists, define a migration to add DeviseInvitable to
   end
 
   # Allow null encrypted_password
-  change_column_null :users, :encrypted_password, true
+  change_column :users, :encrypted_password, :string, :null => true
   # Allow null password_salt (add it if you are using Devise's encryptable module)
-  change_column_null :users, :password_salt, true
+  change_column :users, :password_salt, :string, :null => true
 
 == Model configuration
 
@@ -89,11 +90,13 @@ or directly as parameters to the <tt>devise</tt> method:
 
 * invitation_limit: The number of invitations users can send.  The default value of nil means users can send as many invites as they want.  A setting of 0 means they can't send invitations.  A setting n > 0 means they can send n invitations.
 
-* invite_key: The key to be used to check existing users when sending an invitation. The key must be an unique field. The default value is looking for users by email.
+* invite_key: The key to be used to check existing users when sending an invitation. You can use multiple keys. This value must be a hash with the invite key as hash keys, and regexp to validate format as values. If you don't to validate the key you can set nil as validation format. The default value is looking for users by email and validating with Devise.email_regexp {:email => Devise.email_regexp}.
 
 * validate_on_invite: force a record to be valid before being actually invited.
 
 * resend_invitation: resend invitation if user with invited status is invited again. Enabled by default.
+
+* invited_by_class_name: The class name of the inviting model. If this is nil, polymorphic association is used.
 
 For more details, see <tt>config/initializers/devise.rb</tt> (after you invoked the "devise_invitable:install" generator described above).
 
@@ -152,6 +155,11 @@ You can add :skip_invitation to attributes hash if skip_invitation is added to a
   User.invite!(:email => "new_user@example.com", :name => "John Doe", :skip_invitation => true)
   # => the record will be created, but the invitation email will not be sent
 
+You can send an invitation to an existing user if your workflow creates them separately:
+
+  user = User.find(42)
+  user.invite!(current_user)  # current user is optional to set the invited_by attribute
+
 === Accept an invitation
 
 To accept an invitation with a token use the <tt>accept_invitation!</tt> class method. <tt>:invitation_token</tt> must be present in the parameters hash. You can also include other attributes in the hash.
@@ -165,10 +173,17 @@ A callback event is fired before and after an invitation is accepted (User#accep
   after_invitation_accepted :email_invited_by
 
   def email_invited_by
-     # ... 
+     # ...
   end
 
 The callbacks support all options and arguments available to the standard callbacks provided by AR.
+
+=== Scopes
+
+A pair of scopes to find those users that have accepted, and those that have not accepted, invitations are defined:
+
+  User.invitation_accepted # => returns all Users for whom the invitation_accepted_at attribute is not nil
+  User.invitation_not_accepted # => returns all Users for whom the invitation_accepted_at attribute is nil
 
 == Integration in a Rails application
 
@@ -262,7 +277,7 @@ http://github.com/scambra/devise_invitable/contributors
 Special thanks to rymai[http://github.com/rymai] for the Rails 3 support, his fork was a great help.
 
 == Note on Patches/Pull Requests
- 
+
 * Fork the project.
 * Make your feature addition or bug fix.
 * Add tests for it. This is important so I don't break it in a future version unintentionally.
@@ -271,4 +286,4 @@ Special thanks to rymai[http://github.com/rymai] for the Rails 3 support, his fo
 
 == Copyright
 
-Copyright (c) 2009 Sergio Cambra. See LICENSE for details.
+Copyright (c) 2012 Sergio Cambra. See LICENSE for details.

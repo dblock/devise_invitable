@@ -7,11 +7,12 @@ end
 require 'devise_invitable/mailer'
 require 'devise_invitable/routes'
 require 'devise_invitable/controllers/url_helpers'
+require 'devise_invitable/controllers/registrations'
 require 'devise_invitable/controllers/helpers'
 require 'devise_invitable/rails'
 
 module Devise
-  # Public: Validity period of the invitation token (default: 0). If 
+  # Public: Validity period of the invitation token (default: 0). If
   # invite_for is 0 or nil, the invitation will never expire.
   # Set invite_for in the Devise configuration file (in config/initializers/devise.rb).
   #
@@ -19,7 +20,7 @@ module Devise
   mattr_accessor :invite_for
   @@invite_for = 0
 
-  # Public: Flag that force a record to be valid before being actually invited 
+  # Public: Flag that force a record to be valid before being actually invited
   # (default: false).
   #
   # Examples (in config/initializers/devise.rb)
@@ -35,14 +36,15 @@ module Devise
   #   config.invitation_limit = nil
   mattr_accessor :invitation_limit
   @@invitation_limit = nil
-  
-  # Public: The key to be used to check existing users when sending an invitation
+
+  # Public: The key to be used to check existing users when sending an invitation,
+  # and the regexp used to test it when validate_on_invite is not set.
   #
   # Examples (in config/initializers/devise.rb)
   #
-  #   config.invite_key = :email
+  #   config.invite_key = {:email => /\A[^@]+@[^@]+\z/}
   mattr_accessor :invite_key
-  @@invite_key = :email
+  @@invite_key = {:email => Devise.email_regexp}
 
   # Public: Resend invitation if user with invited status is invited again
   # (default: true)
@@ -52,6 +54,11 @@ module Devise
   #   config.resend_invitation = false
   mattr_accessor :resend_invitation
   @@resend_invitation = true
+
+  # Public: The class name of the inviting model. If this is nil,
+  # the #invited_by association is declared to be polymorphic. (default: nil)
+  mattr_accessor :invited_by_class_name
+  @@invited_by_class_name = nil
 end
 
 Devise.add_module :invitable, :controller => :invitations, :model => 'devise_invitable/model', :route => :invitation
