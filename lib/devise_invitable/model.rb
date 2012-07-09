@@ -116,10 +116,7 @@ module Devise
         super unless invited_to_sign_up?
       end
 
-      def reset_password!(new_password, new_password_confirmation)
-        super
-        accept_invitation!
-      end
+      # removed: reset_password_token, in our world users in this state aren't joined, they should not gain access to the site in this case
 
       def invite_key_valid?
         return true unless self.class.invite_key.is_a? Hash # FIXME: remove this line when deprecation is removed
