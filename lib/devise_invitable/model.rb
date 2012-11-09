@@ -88,13 +88,12 @@ module Devise
       end
 
       # Reset invitation token and send invitation again
-      def invite!(invited_by = nil)
+      def invite!
         was_invited = invited_to_sign_up?
         self.skip_confirmation! if self.new_record? && self.respond_to?(:skip_confirmation!)
         generate_invitation_token if self.invitation_token.nil?
         self.invitation_sent_at = Time.now.utc
-        self.invited_by = invited_by if invited_by
-        
+
         # Call these before_validate methods since we aren't validating on save
         self.downcase_keys if self.new_record? && self.respond_to?(:downcase_keys)
         self.strip_whitespace if self.new_record? && self.respond_to?(:strip_whitespace)

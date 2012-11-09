@@ -148,7 +148,9 @@ class InvitableTest < ActiveSupport::TestCase
     assert_present user.reset_password_token
     assert_present user.invitation_token
     User.reset_password_by_token(:reset_password_token => user.reset_password_token, :password => '123456789', :password_confirmation => '123456789')
-    assert_nil user.reload.invitation_token
+    # see https://github.com/dblock/devise_invitable/commit/906ea2eca4777eeb3a21dea4989350d2cb0c1d00
+    # in our world users in this state aren't joined, they should not gain access to the site in this case
+    assert_not_nil user.reload.invitation_token
   end
 
   test 'should reset invitation token and send invitation by email' do
@@ -375,21 +377,6 @@ class InvitableTest < ActiveSupport::TestCase
     assert_no_difference('ActionMailer::Base.deliveries.size') do
       user.invite!
     end
-  end
-
-  test 'user.invite! should not set the invited_by attribute if not passed' do
-    user = new_user
-    user.invite!
-    assert_equal nil, user.invited_by
-  end
-
-  test 'user.invite! should set the invited_by attribute if passed' do
-    user = new_user
-    inviting_user = User.new(:email => "valid@email.com")
-    inviting_user.save(:validate => false)
-    user.invite!(inviting_user)
-    assert_equal inviting_user, user.invited_by
-    assert_equal inviting_user.class.to_s, user.invited_by_type
   end
 
   test 'user.accept_invitation! should trigger callbacks' do

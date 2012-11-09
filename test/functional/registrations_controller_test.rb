@@ -20,7 +20,6 @@ class Devise::RegistrationsControllerTest < ActionController::TestCase
 
     User.invite!(:email => invitee_email) do |u|
       u.skip_invitation = true
-      u.invited_by = @issuer
     end
     sign_out @issuer
 
@@ -34,16 +33,14 @@ class Devise::RegistrationsControllerTest < ActionController::TestCase
     assert_present @invitee.encrypted_password
     assert_nil @invitee.invitation_accepted_at
     assert_nil @invitee.invitation_token
-    assert_present @invitee.invited_by_id
-    assert_present @invitee.invited_by_type
   end
-  
+
   test "not invitable resources can register" do
     @request.env["devise.mapping"] = Devise.mappings[:admin]
     invitee_email = "invitee@example.org"
-    
+
     post :create, :admin => {:email => invitee_email, :password => "1password"}
-    
+
     @invitee = Admin.where(:email => invitee_email).first
     assert_present @invitee.encrypted_password
   end
