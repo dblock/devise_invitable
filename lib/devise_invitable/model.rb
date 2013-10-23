@@ -29,11 +29,6 @@ module Devise
 
       included do
         include ::DeviseInvitable::Inviter
-        if Devise.invited_by_class_name
-          belongs_to :invited_by, :class_name => Devise.invited_by_class_name
-        else
-          belongs_to :invited_by, :polymorphic => true
-        end
 
         include ActiveSupport::Callbacks
         define_callbacks :invitation_accepted
@@ -57,12 +52,7 @@ module Devise
       end
 
       def self.required_fields(klass)
-        fields = [:invitation_token, :invitation_created_at, :invitation_sent_at, :invitation_accepted_at,
-         :invitation_limit, :invited_by_id, :invited_by_type]
-        if Devise.invited_by_class_name
-          fields -= [:invited_by_type]
-        end
-        fields
+        [:invitation_token, :invitation_sent_at, :invitation_accepted_at, :invitation_limit]
       end
 
       # Accept an invitation by clearing invitation token and and setting invitation_accepted_at
@@ -105,7 +95,7 @@ module Devise
       end
 
       # Reset invitation token and send invitation again
-      def invite!(invited_by = nil)
+      def invite!
         was_invited = invited_to_sign_up?
 
         # Required to workaround confirmable model's confirmation_required? method
@@ -115,16 +105,13 @@ module Devise
         end
 
         generate_invitation_token if self.invitation_token.nil? || (!@skip_invitation && @raw_invitation_token.nil?)
-        self.invitation_created_at = Time.now.utc
-        self.invitation_sent_at = self.invitation_created_at unless @skip_invitation
-        self.invited_by = invited_by if invited_by
+        self.invitation_sent_at = Time.now.utc unless @skip_invitation
 
         # Call these before_validate methods since we aren't validating on save
         self.downcase_keys if self.new_record? && self.respond_to?(:downcase_keys, true)
         self.strip_whitespace if self.new_record? && self.respond_to?(:strip_whitespace, true)
 
         if save(:validate => false)
-          self.invited_by.decrement_invitation_limit! if !was_invited and self.invited_by.present?
           deliver_invitation unless @skip_invitation
         end
       end
@@ -133,7 +120,7 @@ module Devise
       # invited, we need to calculate if the invitation time has not expired
       # for this user, in other words, if the invitation is still valid.
       def valid_invitation?
-        invited_to_sign_up? && invitation_period_valid?
+        invited_to_sign_up?
       end
 
       # Only verify password when is not invited
@@ -141,10 +128,13 @@ module Devise
         super unless invited_to_sign_up?
       end
 
-      def after_password_reset
-        super
-        accept_invitation! if invited_to_sign_up?
-      end
+      #
+      # REMOVED: reset_password_token, in our world users in this state aren't joined, they should not gain access to the site in this case
+      #
+      # def after_password_reset
+      #   super
+      #   accept_invitation! if invited_to_sign_up?
+      # end
 
       def clear_errors_on_valid_keys
         self.class.invite_key.each do |key, value|
@@ -172,30 +162,6 @@ module Devise
 
         def confirmation_required_for_invited?
           respond_to?(:confirmation_required?, true) && confirmation_required? && invitation_accepted?
-        end
-
-        # Checks if the invitation for the user is within the limit time.
-        # We do this by calculating if the difference between today and the
-        # invitation sent date does not exceed the invite for time configured.
-        # Invite_for is a model configuration, must always be an integer value.
-        #
-        # Example:
-        #
-        #   # invite_for = 1.day and invitation_sent_at = today
-        #   invitation_period_valid?   # returns true
-        #
-        #   # invite_for = 5.days and invitation_sent_at = 4.days.ago
-        #   invitation_period_valid?   # returns true
-        #
-        #   # invite_for = 5.days and invitation_sent_at = 5.days.ago
-        #   invitation_period_valid?   # returns false
-        #
-        #   # invite_for = nil
-        #   invitation_period_valid?   # will always return true
-        #
-        def invitation_period_valid?
-          time = invitation_created_at || invitation_sent_at
-          time && (self.class.invite_for.to_i.zero? || time.utc >= self.class.invite_for.ago)
         end
 
         # Generates a new random token for invitation, and stores the time
@@ -234,7 +200,6 @@ module Devise
 
           invitable = find_or_initialize_with_errors(invite_key_array, attributes_hash)
           invitable.assign_attributes(attributes)
-          invitable.invited_by = invited_by
 
           invitable.skip_password = true
           invitable.valid? if self.validate_on_invite

@@ -19,7 +19,6 @@ class User < PARENT_MODEL_CLASS
 
     ## Invitable
     field :invitation_token,       :type => String
-    field :invitation_created_at,  :type => Time
     field :invitation_sent_at,     :type => Time
     field :invitation_accepted_at, :type => Time
     field :invitation_limit,       :type => Integer
@@ -38,7 +37,7 @@ class User < PARENT_MODEL_CLASS
 
   attr_accessor :callback_works, :bio, :token
   validates :username, :length => { :maximum => 20 }
-  
+
   attr_accessor :testing_accepting_or_not_invited
   validates :username, :presence => true, :if => :testing_accepting_or_not_invited_validator?
   validates :bio, :presence => true, :if => :invitation_accepted?

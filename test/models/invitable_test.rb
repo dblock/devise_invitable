@@ -20,7 +20,6 @@ class InvitableTest < ActiveSupport::TestCase
     user.invite!
     token = user.invitation_token
     assert_not_nil user.invitation_token
-    assert_not_nil user.invitation_created_at
     3.times do
       user = User.find(user.id)
       user.invite!
@@ -47,43 +46,13 @@ class InvitableTest < ActiveSupport::TestCase
   test 'should set invitation created and sent at each time' do
     user = new_user
     user.invite!
-    old_invitation_created_at = 3.days.ago
     old_invitation_sent_at = 3.days.ago
-    user.update_attributes(:invitation_sent_at => old_invitation_sent_at, :invitation_created_at => old_invitation_created_at)
+    user.update_attributes(:invitation_sent_at => old_invitation_sent_at)
     3.times do
       user.invite!
       assert_not_equal old_invitation_sent_at, user.invitation_sent_at
-      assert_not_equal old_invitation_created_at, user.invitation_created_at
-      user.update_attributes(:invitation_sent_at => old_invitation_sent_at, :invitation_created_at => old_invitation_created_at)
+      user.update_attributes(:invitation_sent_at => old_invitation_sent_at)
     end
-  end
-
-  test 'should test invitation sent at with invite_for configuration value' do
-    user = User.invite!(:email => "valid@email.com")
-
-    User.stubs(:invite_for).returns(nil)
-    user.invitation_created_at = Time.now.utc
-    assert user.valid_invitation?
-
-    User.stubs(:invite_for).returns(nil)
-    user.invitation_created_at = 1.year.ago
-    assert user.valid_invitation?
-
-    User.stubs(:invite_for).returns(0)
-    user.invitation_created_at = Time.now.utc
-    assert user.valid_invitation?
-
-    User.stubs(:invite_for).returns(0)
-    user.invitation_created_at = 1.day.ago
-    assert user.valid_invitation?
-
-    User.stubs(:invite_for).returns(1.day)
-    user.invitation_created_at = Time.now.utc
-    assert user.valid_invitation?
-
-    User.stubs(:invite_for).returns(1.day)
-    user.invitation_created_at = 2.days.ago
-    assert !user.valid_invitation?
   end
 
   test 'should never generate the same invitation token for different users' do
@@ -176,8 +145,10 @@ class InvitableTest < ActiveSupport::TestCase
     assert_present user.invitation_token
     User.reset_password_by_token(:reset_password_token => token, :password => '123456789', :password_confirmation => '123456789')
     assert_nil user.reload.reset_password_token
-    assert_nil user.reload.invitation_token
-    assert !user.invited_to_sign_up?
+    # see https://github.com/dblock/devise_invitable/commit/906ea2eca4777eeb3a21dea4989350d2cb0c1d00
+    # in our world users in this state aren't joined, they should not gain access to the site in this case
+    assert_not_nil user.reload.invitation_token
+    assert user.invited_to_sign_up?
   end
 
   test 'should not accept invitation on failing to reset the password' do
@@ -348,16 +319,6 @@ class InvitableTest < ActiveSupport::TestCase
     assert_equal ["can't be blank"], invited_user.errors[:invitation_token]
   end
 
-  test 'should return record with errors if invitation_token has expired' do
-    User.stubs(:invite_for).returns(10.hours)
-    invited_user = User.invite!(:email => "valid@email.com")
-    invited_user.invitation_created_at = 2.days.ago
-    invited_user.save(:validate => false)
-    user = User.accept_invitation!(:invitation_token => Thread.current[:token])
-    assert_equal user, invited_user
-    assert_equal ["is invalid"], user.errors[:invitation_token]
-  end
-
   test 'should allow record modification using block' do
     invited_user = User.invite!(:email => "valid@email.com", :username => "a"*50) do |u|
       u.password = '123123'
@@ -462,23 +423,7 @@ class InvitableTest < ActiveSupport::TestCase
     assert_no_difference('ActionMailer::Base.deliveries.size') do
       user.invite!
     end
-    assert_present user.invitation_created_at
     assert_nil user.invitation_sent_at
-  end
-
-  test 'user.invite! should not set the invited_by attribute if not passed' do
-    user = new_user
-    user.invite!
-    assert_equal nil, user.invited_by
-  end
-
-  test 'user.invite! should set the invited_by attribute if passed' do
-    user = new_user
-    inviting_user = User.new(:email => "valid@email.com")
-    inviting_user.save(:validate => false)
-    user.invite!(inviting_user)
-    assert_equal inviting_user, user.invited_by
-    assert_equal inviting_user.class.to_s, user.invited_by_type
   end
 
   test 'user.accept_invitation! should trigger callbacks' do

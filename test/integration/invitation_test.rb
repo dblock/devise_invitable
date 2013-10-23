@@ -123,8 +123,10 @@ class InvitationTest < ActionDispatch::IntegrationTest
     set_password :visit => false, :button => 'Change my password'
 
     user.reload
-    assert_nil user.invitation_token
-    assert user.invitation_accepted_at
+    # see https://github.com/dblock/devise_invitable/commit/906ea2eca4777eeb3a21dea4989350d2cb0c1d00
+    # in our world users in this state aren't joined, they should not gain access to the site in this case
+    assert_not_nil user.invitation_token
+    assert_nil user.invitation_accepted_at
   end
 
   test 'user with invites left should be able to send an invitation' do
@@ -141,7 +143,9 @@ class InvitationTest < ActionDispatch::IntegrationTest
     assert_equal root_path, current_path
     assert page.has_css?('p#notice', :text => 'An invitation email has been sent to user@test.com.')
     user = User.find(user.id)
-    assert !user.has_invitations_left?
+
+    # because there're now multiple inviters, the invitation limits are counted outside of devise_invitable
+    # assert !user.has_invitations_left?
   end
 
   test 'user with no invites left should not be able to send an invitation' do
@@ -171,7 +175,8 @@ class InvitationTest < ActionDispatch::IntegrationTest
     assert_equal root_path, current_path
     assert page.has_css?('p#notice', :text => 'An invitation email has been sent to user@test.com.')
     user = User.find(user.id)
-    assert_equal 2, user.invitation_limit
+    # we no longer decrement and count limits in devise_invitable (was assert_equal 2, user.invitation_limit)
+    assert_equal 3, user.invitation_limit
   end
 
   test 'should not decrement invitation limit when trying to invite again a user which is invited' do
@@ -186,23 +191,15 @@ class InvitationTest < ActionDispatch::IntegrationTest
     assert_equal root_path, current_path
     assert page.has_css?('p#notice', :text => 'An invitation email has been sent to user@test.com.')
     user = User.find(user.id)
-    assert_equal 2, user.invitation_limit
+    # we no longer decrement and count limits in devise_invitable (was assert_equal 2, user.invitation_limit)
+    assert_equal 3, user.invitation_limit
 
     send_invitation
     assert_equal root_path, current_path
     assert page.has_css?('p#notice', :text => 'An invitation email has been sent to user@test.com.')
     user = User.find(user.id)
-    assert_equal 2, user.invitation_limit
-  end
-
-  test 'invited_by should be set when user invites someone' do
-    user = create_full_user
-    sign_in_as_user(user)
-    send_invitation
-
-    invited_user = User.where(:email => 'user@test.com').first
-    assert invited_user
-    assert_equal user, invited_user.invited_by
+    # we no longer decrement and count limits in devise_invitable (was assert_equal 2, user.invitation_limit)
+    assert_equal 3, user.invitation_limit
   end
 
   test 'authenticated user should not be able to send an admin invitation' do

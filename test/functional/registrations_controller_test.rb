@@ -20,7 +20,6 @@ class DeviseInvitable::RegistrationsControllerTest < ActionController::TestCase
 
     User.invite!(:email => invitee_email) do |u|
       u.skip_invitation = true
-      u.invited_by = @issuer
     end
     sign_out @issuer
 
@@ -36,8 +35,6 @@ class DeviseInvitable::RegistrationsControllerTest < ActionController::TestCase
     assert_present @invitee.encrypted_password
     assert_not_nil @invitee.invitation_accepted_at
     assert_nil @invitee.invitation_token
-    assert_present @invitee.invited_by_id
-    assert_present @invitee.invited_by_type
     assert !@invitee.confirmed?
     assert_present @invitee.confirmation_token
   end
